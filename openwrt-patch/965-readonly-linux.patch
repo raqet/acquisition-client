@@ -1,0 +1,301 @@
+From 5133066c9fee91f93e7826ac53c6af28bd864769 Mon Sep 17 00:00:00 2001
+From: Ruud Schramp <schramp@holmes.nl>
+Date: Tue, 10 Mar 2015 08:46:50 +0100
+Subject: [PATCH 1/3] WriteBlocking at the BIO level for forensics on disks
+ with higher guarantees that the disk will not be
+ written.
+
+
+Signed-off-by: Ruud Schramp <schramp@holmes.nl>
+---
+ block/Kconfig             |    9 +++++++++
+ block/blk-core.c          |   30 ++++++++++++++++++++++++++++++
+ block/genhd.c             |    9 +++++++++
+ block/partition-generic.c |   32 ++++++++++++++++++++++++++++++++
+ include/linux/genhd.h     |   11 +++++++++++
+ 5 files changed, 91 insertions(+)
+
+diff --git a/block/Kconfig b/block/Kconfig
+index a7e40a7..e082e51 100644
+--- a/block/Kconfig
++++ b/block/Kconfig
+@@ -99,6 +99,15 @@ config BLK_DEV_THROTTLING
+ 
+ 	See Documentation/cgroups/blkio-controller.txt for more information.
+ 
++config BLK_PREVENT_WRITE
++	bool "Stop writes from accessing the block device"
++	default n
++	help
++	  For forensics strong guards need to be in place that prevent writing to disk beyond
++	  the protection offered by userspace guards at the device filesystem layer. This flag add's a
++	  blocking capability at the block io layer.
++
++
+ menu "Partition Types"
+ 
+ source "block/partitions/Kconfig"
+diff --git a/block/blk-core.c b/block/blk-core.c
+index d5745b5..b859e28 100644
+--- a/block/blk-core.c
++++ b/block/blk-core.c
+@@ -1606,6 +1606,23 @@ static void handle_bad_sector(struct bio *bio)
+ 	set_bit(BIO_EOF, &bio->bi_flags);
+ }
+ 
++#ifdef CONFIG_BLK_PREVENT_WRITE
++
++static bool should_prevent_write(struct hd_struct *part, unsigned int bytes)
++{
++	return part->policy || part->prevent_write;
++}
++
++#else /* CONFIG_BLK_PREVENT_WRITE */
++
++static inline bool should_prevent_write(struct hd_struct *part,
++					unsigned int bytes)
++{
++	return false;
++}
++
++#endif /* CONFIG_BLK_PREVENT_WRITE */
++
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ 
+ static DECLARE_FAULT_ATTR(fail_make_request);
+@@ -1670,6 +1687,7 @@ static inline int bio_check_eod(struct bio *bio, unsigned int nr_sectors)
+ 	return 0;
+ }
+ 
++/** RUSCH: This seems like a good place to validate RW policy */
+ static noinline_for_stack bool
+ generic_make_request_checks(struct bio *bio)
+ {
+@@ -1709,6 +1727,18 @@ generic_make_request_checks(struct bio *bio)
+ 				bio->bi_size))
+ 		goto end_io;
+ 
++	if ((bio->bi_rw & (REQ_WRITE | REQ_WRITE_SAME)) && 
++	    (should_prevent_write(part, bio->bi_size) ||
++	     should_prevent_write(&part_to_disk(part)->part0,
++			 	bio->bi_size))) {
++		printk(KERN_ERR "bio to write protected device %s (%u)\n",
++		       bdevname(bio->bi_bdev, b),
++		       bio_sectors(bio));
++//		printk(KERN_ERR,"Write blocked on device %s (prevent_write or policy ro)\n",
++//				bdevname(bio->bi_bdev, b));
++		goto end_io;
++	}
++
+ 	/*
+ 	 * If this device has partitions, remap block n
+ 	 * of partition p to block n+start(p) of the disk.
+diff --git a/block/genhd.c b/block/genhd.c
+index 20625ee..9de85ad 100644
+--- a/block/genhd.c
++++ b/block/genhd.c
+@@ -987,6 +987,9 @@ static DEVICE_ATTR(discard_alignment, S_IRUGO, disk_discard_alignment_show,
+ static DEVICE_ATTR(capability, S_IRUGO, disk_capability_show, NULL);
+ static DEVICE_ATTR(stat, S_IRUGO, part_stat_show, NULL);
+ static DEVICE_ATTR(inflight, S_IRUGO, part_inflight_show, NULL);
++#ifdef CONFIG_BLK_PREVENT_WRITE
++static DEVICE_ATTR(prevent_write, S_IRUGO | S_IWUSR, prevent_write_show, prevent_write_store);
++#endif
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ static struct device_attribute dev_attr_fail =
+ 	__ATTR(make-it-fail, S_IRUGO|S_IWUSR, part_fail_show, part_fail_store);
+@@ -1008,6 +1011,9 @@ static struct attribute *disk_attrs[] = {
+ 	&dev_attr_capability.attr,
+ 	&dev_attr_stat.attr,
+ 	&dev_attr_inflight.attr,
++#ifdef CONFIG_BLK_PREVENT_WRITE
++	&dev_attr_prevent_write.attr,
++#endif
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ 	&dev_attr_fail.attr,
+ #endif
+@@ -1265,6 +1271,9 @@ struct gendisk *alloc_disk_node(int minors, int node_id)
+ 			kfree(disk);
+ 			return NULL;
+ 		}
++#ifdef CONFIG_BLK_PREVENT_WRITE
++		disk->part0.prevent_write=1; //Forensics should prevent writing from the start
++#endif
+ 		disk->part_tbl->part[0] = &disk->part0;
+ 
+ 		/*
+diff --git a/block/partition-generic.c b/block/partition-generic.c
+index 789cdea..8955b4f 100644
+--- a/block/partition-generic.c
++++ b/block/partition-generic.c
+@@ -144,6 +144,29 @@ ssize_t part_inflight_show(struct device *dev,
+ 		atomic_read(&p->in_flight[1]));
+ }
+ 
++#ifdef CONFIG_BLK_PREVENT_WRITE
++ssize_t prevent_write_show(struct device *dev,
++		       struct device_attribute *attr, char *buf)
++{
++	struct hd_struct *p = dev_to_part(dev);
++
++	return sprintf(buf, "%d\n", p->prevent_write);
++}
++
++ssize_t prevent_write_store(struct device *dev,
++			struct device_attribute *attr,
++			const char *buf, size_t count)
++{
++	struct hd_struct *p = dev_to_part(dev);
++	int i;
++
++	if (count > 0 && sscanf(buf, "%d", &i) > 0)
++		p->prevent_write = (i == 0) ? 0 : 1;
++
++	return count;
++}
++#endif
++
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ ssize_t part_fail_show(struct device *dev,
+ 		       struct device_attribute *attr, char *buf)
+@@ -176,6 +199,9 @@ static DEVICE_ATTR(discard_alignment, S_IRUGO, part_discard_alignment_show,
+ 		   NULL);
+ static DEVICE_ATTR(stat, S_IRUGO, part_stat_show, NULL);
+ static DEVICE_ATTR(inflight, S_IRUGO, part_inflight_show, NULL);
++#ifdef CONFIG_BLK_PREVENT_WRITE
++static DEVICE_ATTR(prevent_write, S_IRUGO | S_IWUSR, prevent_write_show, prevent_write_store);
++#endif
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ static struct device_attribute dev_attr_fail =
+ 	__ATTR(make-it-fail, S_IRUGO|S_IWUSR, part_fail_show, part_fail_store);
+@@ -190,6 +216,9 @@ static struct attribute *part_attrs[] = {
+ 	&dev_attr_discard_alignment.attr,
+ 	&dev_attr_stat.attr,
+ 	&dev_attr_inflight.attr,
++#ifdef CONFIG_BLK_PREVENT_WRITE
++	&dev_attr_prevent_write.attr,
++#endif
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ 	&dev_attr_fail.attr,
+ #endif
+@@ -306,6 +335,9 @@ struct hd_struct *add_partition(struct gendisk *disk, int partno,
+ 	p->nr_sects = len;
+ 	p->partno = partno;
+ 	p->policy = get_disk_ro(disk);
++#ifdef CONFIG_BLK_PREVENT_WRITE
++	p->prevent_write = 1 ; //In forensics the default state for a disk is readonly
++#endif 
+ 
+ 	if (info) {
+ 		struct partition_meta_info *pinfo = alloc_part_info(disk);
+diff --git a/include/linux/genhd.h b/include/linux/genhd.h
+index 9f3c275..37de961 100644
+--- a/include/linux/genhd.h
++++ b/include/linux/genhd.h
+@@ -114,6 +114,9 @@ struct hd_struct {
+ 	struct kobject *holder_dir;
+ 	int policy, partno;
+ 	struct partition_meta_info *info;
++#ifdef CONFIG_BLK_PREVENT_WRITE
++	int prevent_write;
++#endif
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ 	int make_it_fail;
+ #endif
+@@ -632,6 +635,14 @@ extern ssize_t part_stat_show(struct device *dev,
+ 			      struct device_attribute *attr, char *buf);
+ extern ssize_t part_inflight_show(struct device *dev,
+ 			      struct device_attribute *attr, char *buf);
++
++#ifdef CONFIG_BLK_PREVENT_WRITE
++extern ssize_t prevent_write_show(struct device *dev,
++			      struct device_attribute *attr, char *buf);
++extern ssize_t prevent_write_store(struct device *dev,
++			       struct device_attribute *attr,
++			       const char *buf, size_t count);
++#endif /* CONFIG_BLK_PREVENT_WRITE */
+ #ifdef CONFIG_FAIL_MAKE_REQUEST
+ extern ssize_t part_fail_show(struct device *dev,
+ 			      struct device_attribute *attr, char *buf);
+-- 
+1.7.9.5
+
+
+From aca79d8a17214be7dda1c602b31b23ca662f2d35 Mon Sep 17 00:00:00 2001
+From: Ruud Schramp <schramp@holmes.nl>
+Date: Thu, 12 Mar 2015 11:48:35 +0100
+Subject: [PATCH 2/3] Removed some comments, typo in description of
+ CONFIG_BLK_PREVENT_WRITE
+
+
+Signed-off-by: Ruud Schramp <schramp@holmes.nl>
+---
+ block/Kconfig    |    2 +-
+ block/blk-core.c |    3 ---
+ 2 files changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/block/Kconfig b/block/Kconfig
+index e082e51..50d64a0 100644
+--- a/block/Kconfig
++++ b/block/Kconfig
+@@ -104,7 +104,7 @@ config BLK_PREVENT_WRITE
+ 	default n
+ 	help
+ 	  For forensics strong guards need to be in place that prevent writing to disk beyond
+-	  the protection offered by userspace guards at the device filesystem layer. This flag add's a
++	  the protection offered by userspace guards at the device filesystem layer. This flag adds a
+ 	  blocking capability at the block io layer.
+ 
+ 
+diff --git a/block/blk-core.c b/block/blk-core.c
+index b859e28..81b01f5 100644
+--- a/block/blk-core.c
++++ b/block/blk-core.c
+@@ -1687,7 +1687,6 @@ static inline int bio_check_eod(struct bio *bio, unsigned int nr_sectors)
+ 	return 0;
+ }
+ 
+-/** RUSCH: This seems like a good place to validate RW policy */
+ static noinline_for_stack bool
+ generic_make_request_checks(struct bio *bio)
+ {
+@@ -1734,8 +1733,6 @@ generic_make_request_checks(struct bio *bio)
+ 		printk(KERN_ERR "bio to write protected device %s (%u)\n",
+ 		       bdevname(bio->bi_bdev, b),
+ 		       bio_sectors(bio));
+-//		printk(KERN_ERR,"Write blocked on device %s (prevent_write or policy ro)\n",
+-//				bdevname(bio->bi_bdev, b));
+ 		goto end_io;
+ 	}
+ 
+-- 
+1.7.9.5
+
+
+From 142c5eac1ba429c56e85f718140bb25e53476d8f Mon Sep 17 00:00:00 2001
+From: Ruud Schramp <schramp@holmes.nl>
+Date: Wed, 18 Mar 2015 09:53:27 +0100
+Subject: [PATCH 3/3] Block TRIM / DISCARD bio's
+
+
+Signed-off-by: Ruud Schramp <schramp@holmes.nl>
+---
+ block/blk-core.c |    2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/block/blk-core.c b/block/blk-core.c
+index 81b01f5..06359bf 100644
+--- a/block/blk-core.c
++++ b/block/blk-core.c
+@@ -1726,7 +1726,7 @@ generic_make_request_checks(struct bio *bio)
+ 				bio->bi_size))
+ 		goto end_io;
+ 
+-	if ((bio->bi_rw & (REQ_WRITE | REQ_WRITE_SAME)) && 
++	if ((bio->bi_rw & (REQ_WRITE | REQ_WRITE_SAME | REQ_DISCARD)) &&
+ 	    (should_prevent_write(part, bio->bi_size) ||
+ 	     should_prevent_write(&part_to_disk(part)->part0,
+ 			 	bio->bi_size))) {
+-- 
+1.7.9.5
+

@@ -1,0 +1,11 @@
+#!/bin/bash
+[ -e /tmp/dummydisk1 ] || python filldisk.py /tmp/dummydisk1 300 1
+#[ -e /tmp/dummydisk2 ] || python filldisk.py /tmp/dummydisk2 310 2
+[ -e /tmp/dummydisk3 ] || python filldisk.py /tmp/dummydisk3 320 3
+[ -e /tmp/dummydisk4 ] || python filldisk.py /tmp/dummydisk4 3030 4
+qemu-system-i386 -no-reboot -hda /tmp/dummydisk1 \
+    --cdrom ../build/testbuild.iso \
+	-fda /tmp/dummydisk3 \
+	-usbdevice disk:/tmp/dummydisk4 \
+	-redir tcp:3260::3260 \
+	-redir udp:3260::3260 \

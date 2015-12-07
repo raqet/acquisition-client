@@ -1,0 +1,389 @@
+#!/usr/bin/python
+# vim: tabstop=8 noexpandtab shiftwidth=8 softtabstop=8
+import os
+import sys
+import random
+import crypt
+import subprocess
+import errno
+import tempfile
+import shutil
+import json
+import getopt
+import zipfile
+
+keeptemp=False
+
+kernelimagepath="/usr/share/misc/raqetclient/openwrt-x86-generic-ramfs.bzImage"
+initrdextra = []
+
+
+class initrd_builder:
+	def __init__(self):
+		self.tmpdir=tempfile.mkdtemp(prefix="raqet")+"/"
+		self.filenames=[]
+
+	def __del__(self):
+		if keeptemp:
+			print "Not deleting temporary files in "+self.tmpdir
+		else:
+			shutil.rmtree(self.tmpdir)
+	def mkdir(self, path):
+	    try:
+		os.makedirs(self.tmpdir+path)
+	    except OSError as exc: # Python >2.5
+		if exc.errno == errno.EEXIST and os.path.isdir(self.tmpdir+path):
+		    pass
+		else: raise
+
+	def getFile(self, filename, mode,incpio=True):
+		if incpio:
+			self.filenames.append(filename)
+		return open(self.tmpdir+filename,mode)
+
+	def generate_salt(self):
+		"""Generate a salt for the root password in the image"""
+		salt_set = ('abcdefghijklmnopqrstuvwxyz'
+			    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+			    '0123456789./')
+		salt = 16 * ' '
+		return ''.join([random.choice(salt_set) for c in salt])
+
+	def password(self, passwd):
+		"""Generate a password string that can be used in /etc/passwd (or /etc/shadow)"""
+		salt=self.generate_salt()
+		result= crypt.crypt(passwd, "$1$" + salt)
+		return result
+
+	def appendfile(self,src,dest):
+		while True:
+			bytes=src.read(65536)
+			if bytes:
+				dest.write(bytes)
+			else:
+				break
+		dest.flush()
+
+	def makecpio(self,output):
+		"""Make a CPIO file using command line tool"""
+		args=["cpio","-H","newc","-o"]
+
+		cpiofile=open(output,"w")
+		for extracpio in initrdextra:
+			with open(extracpio,"rb") as cpiosrc:
+				self.appendfile(cpiosrc,cpiofile)
+
+		if keeptemp:
+			stderrfile=sys.stderr
+		else:
+			stderrfile=open("/dev/null","w")
+
+		process=subprocess.Popen(args,bufsize=-1,cwd=self.tmpdir,stdout=cpiofile,stdin=subprocess.PIPE,stderr=stderrfile)
+		for filename in self.filenames:
+			process.stdin.write(filename+"\n")
+		process.stdin.close()
+		error=process.wait()
+		return error
+
+	def CreatePasswordFile(self,passwd):
+
+		FixedContent="""daemon:*:0:0:99999:7:::
+ftp:*:0:0:99999:7:::
+network:*:0:0:99999:7:::
+nobody:*:0:0:99999:7:::
+"""
+		rootline="root:%s:16548:0:99999:7:::\n"%self.password(passwd)
+		self.mkdir("etc")
+		shadowfile=self.getFile("etc/shadow","w")
+		shadowfile.write(rootline)
+		shadowfile.write(FixedContent)
+		shadowfile.close()
+
+	def CreateRaquetConfig(self,baseurl,clientid,hostname):
+		"""Generate a configfile like:
+	{
+	"baseurl"  : "http://10.199.99.2:8080",
+	"clientid" : "123456789",
+	"hostname" : "client-1234"
+	}
+		"""
+		configitem={}
+		configitem["baseurl"]=baseurl
+		configitem["clientid"]=clientid
+		configitem["hostname"]=hostname
+		self.mkdir("etc")
+		configfile=self.getFile("etc/raqetserverconfig","w")
+		configfile.write(json.dumps(configitem,indent=4))
+		configfile.close()
+
+	def CreatePXE_config(self,rootpasswd,baseurl,clientid,hostname,output):
+		self.CreateConfig(rootpasswd,baseurl,clientid,hostname,self.tmpdir+"initrd.img")
+
+		outputzip=zipfile.ZipFile(output,"w")
+		outputzip.write(kernelimagepath,"openwrt-x86-generic-ramfs.bzImage")
+		outputzip.write(self.tmpdir+"initrd.img","initrd.img")
+		outputzip.write("/usr/lib/syslinux/pxelinux.0","pxelinux.0")
+		pxeconfig="""default linux
+label linux
+        kernel openwrt-x86-generic-ramfs.bzImage
+	append initrd=/initrd.img
+"""
+		outputzip.writestr("pxelinux.cfg/default",pxeconfig)
+		pxereadme="""This zip archive can be extracted on a TFTP
+server in a subfolder, the DHCP/BOOTP server should point to 
+the pxelinux file for the system that needs to be acquired
+"""
+		outputzip.writestr("README",pxereadme)
+		outputzip.close()
+
+	def CreateISO_config(self,rootpasswd,baseurl,clientid,hostname,output):
+		self.mkdir("ISO")
+		self.mkdir("ISO/isolinux")
+		self.mkdir("ISO/kernel")
+		self.mkdir("ISO/images")
+		isodir=self.tmpdir+"ISO/"
+
+		self.CreateConfig(rootpasswd,baseurl,clientid,hostname,isodir+"images/initrd.img")
+
+		shutil.copy(kernelimagepath,isodir+"kernel/kernel.efi")
+		shutil.copy("/usr/lib/syslinux/isolinux.bin",isodir+"isolinux/isolinux.bin")
+		isoconfig="""default linux
+label linux
+        kernel /kernel/kernel.efi
+	append initrd=/images/initrd.img
+"""
+		isoconfigfile=self.getFile("ISO/isolinux/isolinux.cfg","w",False)
+		isoconfigfile.write(isoconfig)
+		isoconfigfile.close()
+
+
+		isoreadme="""This zip archive can be extracted on a TFTP
+server in a subfolder, the DHCP/BOOTP server should point to
+the pxelinux file for the system that needs to be acquired
+"""
+		isoreadmefile=self.getFile("ISO/README","w",False)
+		isoreadmefile.write(isoreadme)
+		isoreadmefile.close()
+
+		isofile=open(output,"w")
+		args=["mkisofs", "-o", "-", "-b", "isolinux/isolinux.bin", "-c", "isolinux/boot.cat", "-no-emul-boot", "-boot-load-size", "4", "-boot-info-table",  "ISO"]
+		if keeptemp:
+			stderrfile=sys.stderr
+		else:
+			stderrfile=open("/dev/null","w")
+
+		process=subprocess.Popen(args,bufsize=-1,cwd=self.tmpdir,stdout=isofile,stderr=stderrfile)
+		error=process.wait()
+		isofile.close()
+
+		args=["isohybrid", output]
+		process=subprocess.Popen(args,bufsize=-1,stdout=stderrfile, stderr=stderrfile)
+		error=process.wait()
+		isofile.close()
+
+
+	def CreateConfig(self,rootpasswd,baseurl,clientid,hostname,output):
+		self.CreateRaquetConfig(baseurl,clientid,hostname)
+		self.CreatePasswordFile(rootpasswd)
+		self.makecpio(output)
+
+
+def usage():
+	print "raqet config tool"
+	print """raqet -p [password] --server [serverurl] --vpnserveraddress [vpnserveraddress] 
+--vpnclientuser [username]--vpnclientsecret [passwd] 
+--vpnserveruser [username] --vpnserversecret [passwd]
+--clientid [id] --target [pxezip|initrd|iso|usb] --output [outputfilename] 
+--plainiscsiinitiator [ipaddress/mask]"""
+	print
+	print "The iso and usb(disk) version are identical, it is a isohybrid image"
+	sys.exit(2)
+
+class IpSecConfig:
+	def __init__(self):
+		self.vpnserveraddress=""
+		self.vpnserversubnet=""
+		self.vpnserveruser=""
+		self.vpnclientuser=""
+		self.vpnclientsecret=""
+		self.vpnserversecret=""
+		self.plainiscsiinitiator = None
+
+	def CreateIpSecConf(self,_initrd_builder):
+		IpSecConfContent="""# ipsec.conf - strongSwan IPsec configuration file
+
+# basic configuration
+
+config setup
+	# strictcrlpolicy=yes
+	# uniqueids = no
+
+conn %default
+	ikelifetime=60m
+	keylife=20m
+	rekeymargin=3m
+	keyingtries=1
+	keyexchange=ikev1
+
+# VPN connections
+
+conn raqet
+	left=%defaultroute
+	leftsourceip=%config
+	leftid=vpnclientuser
+	leftfirewall=yes
+	leftauth=psk
+	leftauth2=xauth
+	right=vpnserveraddress
+	rightsubnet=vpnserversubnet
+	rightid=@vpnserveruser
+#	rightid=%any
+	rightauth=psk
+	forceencaps = yes
+	auto=start
+"""
+		IpSecConfContent=IpSecConfContent.replace("vpnserveraddress", self.vpnserveraddress)
+		IpSecConfContent=IpSecConfContent.replace("vpnserversubnet",  self.vpnserversubnet)
+		IpSecConfContent=IpSecConfContent.replace("vpnserveruser",    self.vpnserveruser)
+		IpSecConfContent=IpSecConfContent.replace("vpnclientuser",    self.vpnclientuser)
+
+		_initrd_builder.mkdir("etc")
+
+		ipsecconffile=_initrd_builder.getFile("etc/ipsec.conf","w")
+		ipsecconffile.write(IpSecConfContent)
+		ipsecconffile.close()
+
+	def CreateIpSecSecrets(self,_initrd_builder):
+		SecretsConfig="""# /etc/ipsec.secrets - strongSwan IPsec secrets file
+: PSK "vpnserversecret"
+
+vpnclientuser : XAUTH "vpnclientsecret"
+"""
+		SecretsConfig=SecretsConfig.replace("vpnclientuser",  self.vpnclientuser)
+		SecretsConfig=SecretsConfig.replace("vpnclientsecret",self.vpnclientsecret)
+		SecretsConfig=SecretsConfig.replace("vpnserversecret",self.vpnserversecret)
+
+		_initrd_builder.mkdir("etc")
+		ipsecsecretsfile=_initrd_builder.getFile("etc/ipsec.secrets","w")
+		ipsecsecretsfile.write(SecretsConfig)
+		ipsecsecretsfile.close()
+
+	def CreateFirewall(self,_initrd_builder):
+		_initrd_builder.mkdir("etc")
+		ipsecsecretsfile=_initrd_builder.getFile("etc/firewall.user","w")
+		ipsecsecretsfile.write("iptables -I zone_wan_input -p tcp --dport 22 -j ACCEPT\n")
+		if (self.plainiscsiinitiator):
+			ipsecsecretsfile.write("iptables -I zone_wan_input -p tcp -s %s --dport 3260 -j ACCEPT\n" % self.plainiscsiinitiator)
+		else:
+			ipsecsecretsfile.write("iptables -I zone_wan_input --match policy --pol ipsec --dir in -p tcp --dport 3260 -j ACCEPT")
+		ipsecsecretsfile.close()
+
+
+	def checkAndBuild(self,_initrd_builder):
+		filleddictsize=0
+		#Count the non-empty parameters
+		allsettings = [ "vpnserveraddress", "vpnserversubnet", "vpnserveruser", "vpnclientuser", "vpnclientsecret", "vpnserversecret" ]
+		for key in allsettings :
+			if (self.__dict__[key]!=""):
+				filleddictsize = filleddictsize + 1
+
+		self.CreateFirewall(_initrd_builder)
+		#if non of the arguments is set, no VPN will be configured
+		if (filleddictsize==0):
+			print
+			print "WARNING: VPN not configured, communication will not be encrypted"
+			return
+		#All parameters must be non empty
+		if (filleddictsize!=6):
+			print
+			print "ERROR: VPN not correct, settings not complete"
+			for key in self.__dict__:
+				if (self.__dict__[key]==""):
+					print "Missing --"+key
+			usage()
+		self.CreateIpSecConf(_initrd_builder)
+		self.CreateIpSecSecrets(_initrd_builder)
+
+
+	def setarg(self,opt,arg):
+		self.__dict__[opt[2:]]=arg
+
+def main():
+	password=""
+	baseurl="http://10.199.99.2:8080"
+	clientid="123456789"
+
+	output="./pxe.zip"
+	target="pxezip"
+
+	vpnconfig=IpSecConfig()
+
+	try:
+		opts, args = getopt.getopt(sys.argv[1:], "hp:d", ["help", "password=","server=","clientid=",
+								"output=","target=","kernel=","initrdextra=",
+								"vpnserveraddress=", "vpnserversubnet=",
+								"vpnclientuser=", "vpnclientsecret=",
+								"vpnserveruser=", "vpnserversecret=", "plainiscsiinitiator=" ])
+	except getopt.GetoptError as err:
+		print  str(err)
+		usage()
+	for opt, arg in opts:
+		if opt in ("-h", "--help"):
+			usage()
+		elif opt == '-o':
+			output=arg
+		elif opt == '-d':
+			global keeptemp
+			keeptemp=True
+		elif opt in ("-p", "--password"):
+			password=arg
+		elif opt =="--server":
+			baseurl=arg
+		elif opt =="--clientid":
+			clientid=arg
+		elif opt =="--output":
+			output=arg
+		elif opt =="--target":
+			target=arg
+		elif opt =="--kernel":
+			global kernelimagepath
+			kernelimagepath=arg
+		elif opt =="--plainiscsiinitiator":
+			vpnconfig.setarg(opt,arg)
+		elif opt[:5]=="--vpn":
+			vpnconfig.setarg(opt,arg)
+		elif opt =="--initrdextra":
+			global initrdextra
+			initrdextra.append(arg)
+
+	hostname="client-"+clientid
+
+	if len(password)<=0:
+		print "Password not set"
+		print
+		usage()
+
+	C=initrd_builder()
+	vpnconfig.checkAndBuild(C)
+
+	if target=="pxezip":
+		C.CreatePXE_config(password,baseurl,clientid,hostname,output)
+	elif target=="initrd":
+		C.CreateConfig(password,baseurl,clientid,hostname,output)
+	elif target=="iso":
+		C.CreateISO_config(password,baseurl,clientid,hostname,output)
+	elif target=="usb":
+		C.CreateISO_config(password,baseurl,clientid,hostname,output)
+	else:
+		print "Unknown target " + target
+		print
+		usage()
+
+
+
+if __name__ == "__main__":
+    main()
+		
+
+
+

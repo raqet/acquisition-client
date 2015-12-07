@@ -1,0 +1,182 @@
+From 32e0b7b48b1ce7aa62c7392f159418bf095928b9 Mon Sep 17 00:00:00 2001
+From: Ruud Schramp <schramp@holmes.nl>
+Date: Thu, 23 Apr 2015 14:47:17 +0200
+Subject: [PATCH] Remove all "git" protocol fetches
+
+---
+ package/devel/trace-cmd/Makefile                 |    2 +-
+ package/libs/libreadline/Makefile                |    2 +-
+ package/libs/libreadline/patches/120-curses-link |   16 ++++++++++++++++
+ package/network/config/firewall/Makefile         |    2 +-
+ package/network/services/odhcpd/Makefile         |    2 +-
+ package/system/fstools/Makefile                  |    2 +-
+ package/system/procd/Makefile                    |    2 +-
+ package/system/ubox/Makefile                     |    2 +-
+ package/system/ubus/Makefile                     |    2 +-
+ package/system/uci/Makefile                      |    2 +-
+ package/utils/ubi-utils/Makefile                 |    2 +-
+ 11 files changed, 26 insertions(+), 10 deletions(-)
+ create mode 100644 package/libs/libreadline/patches/120-curses-link
+
+diff --git a/package/devel/trace-cmd/Makefile b/package/devel/trace-cmd/Makefile
+index 6bd70e9..7c53db6 100644
+--- a/package/devel/trace-cmd/Makefile
++++ b/package/devel/trace-cmd/Makefile
+@@ -5,7 +5,7 @@ PKG_VERSION:=v2.2.1
+ PKG_RELEASE=1
+ 
+ PKG_SOURCE_PROTO:=git
+-PKG_SOURCE_URL:=git://git.kernel.org/pub/scm/linux/kernel/git/rostedt/trace-cmd.git
++PKG_SOURCE_URL:=http://git.kernel.org/pub/scm/linux/kernel/git/rostedt/trace-cmd.git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=8c10a774f1f8586cd8b0e3ce8666a376cb1d98e3
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+diff --git a/package/libs/libreadline/Makefile b/package/libs/libreadline/Makefile
+index 0ce11a3..f98eff4 100644
+--- a/package/libs/libreadline/Makefile
++++ b/package/libs/libreadline/Makefile
+@@ -27,6 +27,7 @@ define Package/libreadline
+   CATEGORY:=Libraries
+   TITLE:=Command lines edition library
+   URL:=http://cnswww.cns.cwru.edu/php/chet/readline/rltop.html
++  DEPENDS:=libncurses
+ endef
+ 
+ define Package/libreadline/description
+@@ -43,7 +44,6 @@ define Build/Configure
+ 	$(call Build/Configure/Default, \
+ 		--enable-shared \
+ 		--enable-static \
+-		--without-curses \
+ 	)
+ endef
+ 
+diff --git a/package/libs/libreadline/patches/120-curses-link b/package/libs/libreadline/patches/120-curses-link
+new file mode 100644
+index 0000000..20be0c5
+--- /dev/null
++++ b/package/libs/libreadline/patches/120-curses-link
+@@ -0,0 +1,16 @@
++link readline directly to ncurses since it needs symbols from it
++
++upstream readline does this on purpose (no direct linking), but
++it doesn't make much sense in a Linux world
++
++--- a/support/shobj-conf
+++++ b/support/shobj-conf
++@@ -40,7 +40,7 @@ SHOBJ_XLDFLAGS=
++ SHOBJ_LIBS=
++ 
++ SHLIB_XLDFLAGS=
++-SHLIB_LIBS=
+++SHLIB_LIBS=-lncurses
++ 
++ SHLIB_DOT='.'
++ SHLIB_LIBPREF='lib'
+diff --git a/package/network/config/firewall/Makefile b/package/network/config/firewall/Makefile
+index b9c1987..cbb3a9a 100644
+--- a/package/network/config/firewall/Makefile
++++ b/package/network/config/firewall/Makefile
+@@ -12,7 +12,7 @@ PKG_VERSION:=2014-09-19
+ PKG_RELEASE:=$(PKG_SOURCE_VERSION)
+ 
+ PKG_SOURCE_PROTO:=git
+-PKG_SOURCE_URL:=git://nbd.name/firewall3.git
++PKG_SOURCE_URL:=https://github.com/Schramp/firewall3.git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=50e97c52e75bdfd325cf20d43b32d294ff84d92f
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
+diff --git a/package/network/services/odhcpd/Makefile b/package/network/services/odhcpd/Makefile
+index e1655b2..ff50986 100644
+--- a/package/network/services/odhcpd/Makefile
++++ b/package/network/services/odhcpd/Makefile
+@@ -13,7 +13,7 @@ PKG_RELEASE=$(PKG_SOURCE_VERSION)
+ 
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.bz2
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+-PKG_SOURCE_URL:=git://github.com/sbyx/odhcpd.git
++PKG_SOURCE_URL:=https://github.com/Schramp/odhcpd.git
+ PKG_SOURCE_PROTO:=git
+ PKG_SOURCE_VERSION:=a6e2953843eaf6c93764f9feef10466e7a84ec85
+ 
+diff --git a/package/system/fstools/Makefile b/package/system/fstools/Makefile
+index 99bcb1b..027b265 100644
+--- a/package/system/fstools/Makefile
++++ b/package/system/fstools/Makefile
+@@ -13,7 +13,7 @@ PKG_VERSION:=2015-02-25.1
+ PKG_RELEASE=$(PKG_SOURCE_VERSION)
+ 
+ PKG_SOURCE_PROTO:=git
+-PKG_SOURCE_URL:=git://nbd.name/fstools.git
++PKG_SOURCE_URL:=https://github.com/Schramp/fstools.git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=914b023e71559e033ec5a1f9840511eb1ccaf386
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
+diff --git a/package/system/procd/Makefile b/package/system/procd/Makefile
+index de73784..29b71e9 100644
+--- a/package/system/procd/Makefile
++++ b/package/system/procd/Makefile
+@@ -13,7 +13,7 @@ PKG_VERSION:=2014-09-15
+ PKG_RELEASE=$(PKG_SOURCE_VERSION)
+ 
+ PKG_SOURCE_PROTO:=git
+-PKG_SOURCE_URL:=git://nbd.name/luci2/procd.git
++PKG_SOURCE_URL:=https://github.com/Schramp/procd.git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=c1a558f7d0c1e6c1ffa5a47d557a7b45205eef1d
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
+diff --git a/package/system/ubox/Makefile b/package/system/ubox/Makefile
+index 2d7ed29..80dafbd 100644
+--- a/package/system/ubox/Makefile
++++ b/package/system/ubox/Makefile
+@@ -5,7 +5,7 @@ PKG_VERSION:=2015-02-25.1
+ PKG_RELEASE=$(PKG_SOURCE_VERSION)
+ 
+ PKG_SOURCE_PROTO:=git
+-PKG_SOURCE_URL:=git://nbd.name/luci2/ubox.git
++PKG_SOURCE_URL:=https://github.com/Schramp/ubox.git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=31f0ff358b360ee461d845c1b3b5e5d38fa27925
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
+diff --git a/package/system/ubus/Makefile b/package/system/ubus/Makefile
+index 194b3e3..da628cf 100644
+--- a/package/system/ubus/Makefile
++++ b/package/system/ubus/Makefile
+@@ -5,7 +5,7 @@ PKG_VERSION:=2014-09-17
+ PKG_RELEASE=$(PKG_SOURCE_VERSION)
+ 
+ PKG_SOURCE_PROTO:=git
+-PKG_SOURCE_URL:=git://nbd.name/luci2/ubus.git
++PKG_SOURCE_URL:=https://github.com/commodo/ubus.git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=4c4f35cf2230d70b9ddd87638ca911e8a563f2f3
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
+diff --git a/package/system/uci/Makefile b/package/system/uci/Makefile
+index 29f9ef3..8d11478 100644
+--- a/package/system/uci/Makefile
++++ b/package/system/uci/Makefile
+@@ -16,7 +16,7 @@ PKG_RELEASE:=1
+ PKG_REV:=e339407372ffc70b1451e4eda218c01aa95a6a7f
+ 
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+-PKG_SOURCE_URL:=git://nbd.name/uci.git
++PKG_SOURCE_URL:=https://github.com/bartve-enovation/uci.git
+ PKG_SOURCE_SUBDIR:=uci-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=$(PKG_REV)
+ PKG_SOURCE_PROTO:=git
+diff --git a/package/utils/ubi-utils/Makefile b/package/utils/ubi-utils/Makefile
+index 6ff83db..74e9acf 100644
+--- a/package/utils/ubi-utils/Makefile
++++ b/package/utils/ubi-utils/Makefile
+@@ -13,7 +13,7 @@ PKG_VERSION:=1.5.1
+ PKG_RELEASE:=2
+ 
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+-PKG_SOURCE_URL:=git://git.infradead.org/mtd-utils.git
++PKG_SOURCE_URL:=http://git.infradead.org/mtd-utils.git
+ PKG_SOURCE_PROTO:=git
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+ PKG_SOURCE_VERSION:=$(PKG_REV)
+-- 
+1.7.9.5
+

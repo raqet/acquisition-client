@@ -1,0 +1,14 @@
+config interface 'loopback'
+        option ifname 'lo'
+        option proto 'static'
+        option ipaddr '127.0.0.1'
+        option netmask '255.0.0.0'
+
+config interface 'wan'
+        option ifname 'eth0'
+        option proto 'dhcp'
+
+config globals 'globals'
+        option ula_prefix 'fd2f:2bd0:6a00::/48'
+
+

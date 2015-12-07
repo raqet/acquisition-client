@@ -1,0 +1,17 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2014 OpenWrt.org
+#
+
+START=11
+
+boot() {
+#kernel wants a modprobe with "-q --" as commandline options, lets fake one
+	echo /sbin/modprobe_alt >/proc/sys/kernel/modprobe
+#need to mount configfs
+	mount -t configfs configfs /sys/kernel/config
+
+#Configure storage node
+	/bin/clientcontroller.py
+
+}
+

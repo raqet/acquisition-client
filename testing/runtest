@@ -1,0 +1,7 @@
+#!/bin/bash
+./qemu-client &
+python stub_webserver.py        2>&1 | tee ../TestLog.txt
+python test-iscsi.py            2>&1 | tee -a ../TestLog.txt
+python stub_webserver_reboot.py 2>&1 | tee -a ../TestLog.txt
+
+exit 0

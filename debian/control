@@ -1,0 +1,20 @@
+Source: raqetclient
+Section: unknown
+Priority: extra
+Maintainer: Ruud Schramp <schramp@holmes.nl>
+Build-Depends: debhelper (>= 8.0.0),git-core,build-essential,libssl-dev,libncurses5-dev,unzip,python,gawk,wget,subversion,whois
+Standards-Version: 3.9.2
+Homepage: <insert the upstream URL, if relevant>
+#Vcs-Git: git://git.debian.org/collab-maint/raqetclient.git
+#Vcs-Browser: http://git.debian.org/?p=collab-maint/raqetclient.git;a=summary
+
+Package: raqetclient
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends},python,syslinux,syslinux-common
+Description: Raqet remote acquisition client configuration tool
+ Raqet 
+
+Package: raqetclient-doc
+Architecture: all
+Description: documentation for raqetclient
+ <insert long description, indented with spaces>

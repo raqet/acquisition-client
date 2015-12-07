@@ -1,0 +1,95 @@
+Openwrt config changes
+======================
+
+------------------
+cd openwrt
+make menuconfig
+cp .config ../openwrt-config
+------------------
+
+
+Kernel config changes
+=====================
+
+------------------
+cd openwrt
+make kernel_menuconfig
+cp ./target/linux/x86/config-3.10 ../kernel-config-3.10
+------------------
+
+
+Result OS
+=========
+
+Build a bootable OS package using the raqet authoring program:
+
+-----------------
+./authoring/raqet -p secret --clientid testingclient --server http://10.199.99.2:5555 \
+--output testbuild.zip --target pxezip --kernel \
+./openwrt/bin/x86/openwrt-x86-generic-ramfs.bzImage --vpnserveraddress \
+10.199.99.2 --vpnserversubnet 10.199.99.0/24 --vpnclientuser someone \
+   --vpnclientsecret anotherpassword --vpnserveruser acquisitionserver \
+   --vpnserversecret "replace but leave the quotes"
+-----------------
+
+Install the result OS in testbuild.zip on a tftp server, and unzip it there.
+
+-----------------
+scp testbuild.zip root@[ipaddress]:/var/lib/tftpboot/
+-----------------
+
+Two deployent methods for PXE are possible:
+. unzip it in the tftp root and rename de config to a valid name containing the correct mac
+address
+. unzip in a folder and modify the bootp server to use that folder for the
+correct mac address.
+
+WARNING: For short iteration-cycles the possibility exist to use a ramdisk
+that contains just the non-OS files:
+
+--------
+make openwrt-ramfsoverlay
+
+Build a raqet config with the option "--initrdextra build/initrd.img"
+
+scp testbuild.zip root@[ipaddress]:/var/lib/tftpboot/
+-----------
+
+----------
+root@DHCP-Server-HostingNet:/var/lib/tftpboot/pxelinux.cfg# cat default 
+
+default linux
+label linux
+        kernel openwrt-x86-generic-ramfs.bzImage
+	append initrd=/initrd.img 
+----------
+
+Testing
+=======
+
+Limited testing is possible using qemu, however due to net user limitations
+this will not allow testing of the iscsi portions without adding a better
+network stack.
+
+-------------
+make test
+-------------
+
+Starting an iso in combination with the acquisition server is also
+possible using qemu and a tap interface. The usage of the tap interface
+requires qemu to run as root. This is implemented by calling the
+start script with sudo. 
+
+------------
+make run-using-tap
+------------
+
+
+IPSEC
+=====
+
+The client supports strongswan IPSEC. The configuration is a typical 
+"road warior" configuration using a virtual IP address that is assigned by the
+VPN server.
+
+A demo configuration for strongswan is added in the path /doc/server/

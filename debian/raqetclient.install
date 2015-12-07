@@ -1,0 +1,2 @@
+openwrt/bin/x86/openwrt-x86-generic-ramfs.bzImage usr/share/misc/raqetclient/
+authoring/raqet usr/bin/

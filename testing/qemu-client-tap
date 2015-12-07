@@ -1,0 +1,20 @@
+#!/bin/bash
+TAPDEVICE=tap0
+tunctl -t $TAPDEVICE
+ifconfig tap0 192.168.13.1 netmask 255.255.255.0
+dnsmasq --except-interface=lo --bind-interfaces --listen 192.168.13.1 -i $TAPDEVICE --dhcp-range=192.168.13.2,192.168.13.254 --pid-file=/tmp/raqet-test-dnsmasq.pid
+[ -e /tmp/dummydisk1 ] || python filldisk.py /tmp/dummydisk1 3000 1
+[ -e /tmp/dummydisk2 ] || python filldisk.py /tmp/dummydisk2 3010 2
+[ -e /tmp/dummydisk3 ] || python filldisk.py /tmp/dummydisk3 3020 3
+[ -e /tmp/dummydisk4 ] || python filldisk.py /tmp/dummydisk4 3030 4
+qemu-system-i386 -no-reboot -net nic,model=virtio -net tap,ifname=$TAPDEVICE,script=no,downscript=no \
+    -curses \
+    -hda /tmp/dummydisk1 \
+    -drive file=/tmp/dummydisk2,if=virtio \
+    --cdrom ../build/testbuild.iso \
+	-fda /tmp/dummydisk3 \
+	-usbdevice disk:/tmp/dummydisk4 \
+	-redir tcp:3260::3260 \
+	-redir udp:3260::3260 \
+
+kill `cat /tmp/raqet-test-dnsmasq.pid`
