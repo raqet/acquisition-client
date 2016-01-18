@@ -147,7 +147,7 @@ index 194b3e3..da628cf 100644
  
  PKG_SOURCE_PROTO:=git
 -PKG_SOURCE_URL:=git://nbd.name/luci2/ubus.git
-+PKG_SOURCE_URL:=https://github.com/commodo/ubus.git
++PKG_SOURCE_URL:=https://github.com/sartura/ubus.git
  PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
  PKG_SOURCE_VERSION:=4c4f35cf2230d70b9ddd87638ca911e8a563f2f3
  PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
