@@ -2,7 +2,7 @@ Source: raqetclient
 Section: unknown
 Priority: extra
 Maintainer: Ruud Schramp <schramp@holmes.nl>
-Build-Depends: debhelper (>= 8.0.0),git-core,build-essential,libssl-dev,libncurses5-dev,unzip,python,gawk,wget,subversion,whois
+Build-Depends: debhelper (>= 8.0.0),git-core,build-essential,libssl-dev,libncurses5-dev,unzip,python,gawk,wget,subversion,whois,ca-certificates
 Standards-Version: 3.9.2
 Homepage: <insert the upstream URL, if relevant>
 #Vcs-Git: git://git.debian.org/collab-maint/raqetclient.git
