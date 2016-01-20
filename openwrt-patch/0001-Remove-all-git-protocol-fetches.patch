@@ -180,3 +180,16 @@ index 6ff83db..74e9acf 100644
 -- 
 1.7.9.5
 
+diff --git a/package/firmware/linux-firmware/Makefile b/package/firmware/linux-firmware/Makefile
+index 015aff7..545fbaa 100644
+--- a/package/firmware/linux-firmware/Makefile
++++ b/package/firmware/linux-firmware/Makefile
+@@ -15,7 +15,7 @@ PKG_RELEASE:=1
+ PKG_SOURCE_PROTO:=git
+ PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
+ PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
+-PKG_SOURCE_URL:=git://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
++PKG_SOURCE_URL:=http://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
+ PKG_MIRROR_MD5SUM:=ca4d289ad9380471cae376fc7dd3660a
+ 
+ PKG_MAINTAINER:=Felix Fietkau <nbd@openwrt.org>
