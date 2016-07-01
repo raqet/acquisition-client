@@ -109,7 +109,7 @@ clean:
 	find files -name \*.pyc -exec rm {} \;
 
 debiansourcepkg: dist_clean
-	tar czf ../raqetclient_0.1.orig.tar.gz --exclude .git --exclude debian .
+	tar czf ../raqetclient_0.2.orig.tar.gz --exclude .git --exclude debian .
 	dpkg-buildpackage -S
 
 debianbinarypkg:
