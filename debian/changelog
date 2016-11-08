@@ -1,3 +1,10 @@
+raqetclient (0.3-1) unstable; urgency=medium
+
+  * MAC Address regexp corrected (capitals)
+  * Documentation fixes
+
+ -- Ruud Schramp <schramp@holmes.nl>  Tue, 8 Nov 2016 22:42:00 +0100
+
 raqetclient (0.2-1) unstable; urgency=medium
 
   * Package dependencies
