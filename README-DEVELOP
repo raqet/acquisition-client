@@ -1,3 +1,11 @@
+Build default configuration
+===========================
+
+-----------
+make
+-----------
+
+
 Openwrt config changes
 ======================
 
