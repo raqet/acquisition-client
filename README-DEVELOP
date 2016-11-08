@@ -2,6 +2,7 @@ Build default configuration
 ===========================
 
 -----------
+sudo apt-get install libncurses5-dev zlib1g-dev subversion
 make
 -----------
 
