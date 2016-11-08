@@ -53,7 +53,7 @@ class DiskInfo:
 #Leave out the smartctl as its output contains a timestamp and is therefor not just
 #hardware dependent. It contains mostly the same information anyway
 
-ifconfigmacpattern = re.compile('HWaddr ([0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f])')
+ifconfigmacpattern = re.compile('HWaddr ([0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F])')
 
 class EthernetInfo:
     """Storage class for ethernet MAC information"""
